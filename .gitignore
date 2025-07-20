@@ -1,0 +1,26 @@
+# Compiled binaries
+server
+client
+
+# Build files
+*.o
+*.out
+*.exe
+*.log
+
+# Editor-specific
+*.swp
+*~
+.vscode/
+.idea/
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Dependency cache
+*.dSYM/
+*.obj
+
+# Optional
+build/
