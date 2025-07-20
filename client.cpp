@@ -8,24 +8,12 @@
 #include <arpa/inet.h>
 #include <numeric>
 #include <random>
+#include <cstdio>  // for freopen()
 
-// Define constants
 const int PORT = 8080;
 const int GRAPH_SIZE = 5;
 
-// Function to create a random graph
-std::vector<std::vector<int>> createGraph() {
-    std::vector<std::vector<int>> graph(GRAPH_SIZE, std::vector<int>(GRAPH_SIZE, 0));
-    srand(time(0));
-    for (int i = 0; i < GRAPH_SIZE; ++i) {
-        for (int j = i + 1; j < GRAPH_SIZE; ++j) {
-            graph[i][j] = graph[j][i] = rand() % 2;
-        }
-    }
-    return graph;
-}
-
-// Function to permute a graph with a given permutation vector
+// Function to permute a graph using a given permutation
 std::vector<std::vector<int>> permuteGraph(const std::vector<std::vector<int>>& graph, const std::vector<int>& perm) {
     std::vector<std::vector<int>> permutedGraph(GRAPH_SIZE, std::vector<int>(GRAPH_SIZE, 0));
     for (int i = 0; i < GRAPH_SIZE; ++i) {
@@ -36,57 +24,112 @@ std::vector<std::vector<int>> permuteGraph(const std::vector<std::vector<int>>& 
     return permutedGraph;
 }
 
+void printMatrix(const std::vector<std::vector<int>>& matrix, const std::string& name) {
+    std::cout << "\n[" << name << "]\n";
+    for (const auto& row : matrix) {
+        for (int val : row)
+            std::cout << val << " ";
+        std::cout << "\n";
+    }
+}
+
+void printVector(const std::vector<int>& vec, const std::string& name) {
+    std::cout << "\n[" << name << "]: ";
+    for (int v : vec)
+        std::cout << v << " ";
+    std::cout << "\n";
+}
+
 int main() {
+    // Redirect logs to files
+    freopen("client_log.txt", "w", stdout);   // Logs (std::cout)
+    freopen("client_err.txt", "w", stderr);   // Errors (std::cerr)
+
+    std::cout << "[CLIENT] Logging started..." << std::endl;
+
     int sock = 0;
     struct sockaddr_in serv_addr;
 
-    // Create socket
+    // Socket creation
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        perror("Socket creation error");
+        perror("[ERROR] Socket creation failed");
         return -1;
     }
+    std::cout << "[INFO] Socket created\n";
 
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(PORT);
 
     if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
-        perror("Invalid address");
+        perror("[ERROR] Invalid address");
         return -1;
     }
 
-    // Connect to the server
     if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        perror("Connection Failed");
+        perror("[ERROR] Connection Failed");
+        return -1;
+    }
+    std::cout << "[INFO] Connected to server\n";
+
+    // Step 1: Receive graph from server
+    std::vector<int> flatGraph(GRAPH_SIZE * GRAPH_SIZE, 0);
+    ssize_t bytesReceived = read(sock, flatGraph.data(), flatGraph.size() * sizeof(int));
+    std::cout << "[INFO] Expecting " << flatGraph.size() * sizeof(int) << " bytes\n";
+
+    if (bytesReceived != static_cast<ssize_t>(flatGraph.size() * sizeof(int))) {
+        std::cerr << "[ERROR] Received " << bytesReceived << " bytes. Incomplete graph.\n";
+        close(sock);
         return -1;
     }
 
-    // Receive permuted graph from server
-    std::vector<std::vector<int>> serverGraph(GRAPH_SIZE, std::vector<int>(GRAPH_SIZE, 0));
-    read(sock, serverGraph.data(), GRAPH_SIZE * GRAPH_SIZE * sizeof(int));
+    std::cout << "[INFO] Graph received from server (" << bytesReceived << " bytes)\n";
 
-    std::cout << "Received permuted graph from server:\n";
-    for (const auto& row : serverGraph) {
-        for (int val : row) {
-            std::cout << val << " ";
-        }
-        std::cout << "\n";
-    }
+    // Convert to 2D matrix
+    std::vector<std::vector<int>> serverGraph(GRAPH_SIZE, std::vector<int>(GRAPH_SIZE));
+    for (int i = 0; i < GRAPH_SIZE; ++i)
+        for (int j = 0; j < GRAPH_SIZE; ++j)
+            serverGraph[i][j] = flatGraph[i * GRAPH_SIZE + j];
 
-    // Create own random graph and permute it
-    auto publicGraph = createGraph();
-    std::vector<int> perm(GRAPH_SIZE);
-    std::iota(perm.begin(), perm.end(), 0);
+    printMatrix(serverGraph, "G_s from Server");
 
-    // Initialize random generator for shuffling
+    // Step 2: Generate permutation P_c
+    std::vector<int> perm_c(GRAPH_SIZE);
+    std::iota(perm_c.begin(), perm_c.end(), 0);
     std::random_device rd;
     std::mt19937 g(rd());
-    std::shuffle(perm.begin(), perm.end(), g);
+    std::shuffle(perm_c.begin(), perm_c.end(), g);
 
-    auto permutedGraph = permuteGraph(publicGraph, perm);
+    printVector(perm_c, "Client Permutation P_c");
 
-    // Send permuted graph to server
-    send(sock, permutedGraph.data(), GRAPH_SIZE * GRAPH_SIZE * sizeof(int), 0);
-    std::cout << "Sent permuted graph to server\n";
+    // Step 3: Apply permutation to G_s
+    auto clientGraph = permuteGraph(serverGraph, perm_c);
+    printMatrix(clientGraph, "G_sc (G_s after applying P_c)");
+
+    // Step 4: Flatten G_sc
+    std::vector<int> flatClientGraph(GRAPH_SIZE * GRAPH_SIZE);
+    for (int i = 0; i < GRAPH_SIZE; ++i)
+        for (int j = 0; j < GRAPH_SIZE; ++j)
+            flatClientGraph[i * GRAPH_SIZE + j] = clientGraph[i][j];
+
+    // Step 5: Send G_sc
+    ssize_t sentGraph = send(sock, flatClientGraph.data(), flatClientGraph.size() * sizeof(int), 0);
+    std::cout << "[INFO] Sent " << sentGraph << " bytes (G_sc)\n";
+    if (sentGraph != static_cast<ssize_t>(flatClientGraph.size() * sizeof(int))) {
+        std::cerr << "[ERROR] Failed to send complete G_sc\n";
+        close(sock);
+        return -1;
+    }
+
+    // Step 6: Send P_c
+    ssize_t sentPerm = send(sock, perm_c.data(), GRAPH_SIZE * sizeof(int), 0);
+    std::cout << "[INFO] Sent " << sentPerm << " bytes (P_c)\n";
+    if (sentPerm != static_cast<ssize_t>(GRAPH_SIZE * sizeof(int))) {
+        std::cerr << "[ERROR] Failed to send permutation vector\n";
+        close(sock);
+        return -1;
+    }
+
+    std::cout << "[CLIENT] Graph and permutation sent. Closing connection.\n";
 
     close(sock);
     return 0;

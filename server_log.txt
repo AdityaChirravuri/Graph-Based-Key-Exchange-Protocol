@@ -1,0 +1,44 @@
+[SERVER] Logging started...
+[INFO] Server listening on port 8080
+[INFO] Waiting for client connection...
+[INFO] Client connected
+
+[Original Graph G]
+0 0 0 1 0 
+0 0 0 0 0 
+0 0 0 1 1 
+1 0 1 0 0 
+0 0 1 0 0 
+[Server Permutation P_s]: 4 3 1 0 2 
+
+[Permuted Graph G_s]
+0 1 0 0 1 
+1 0 1 0 0 
+0 1 0 0 0 
+0 0 0 0 0 
+1 0 0 0 0 
+[INFO] Sent G_s to client
+
+[Received Graph G_sc from Client]
+0 0 0 1 0 
+0 0 0 0 0 
+0 0 0 0 1 
+1 0 0 0 1 
+0 0 1 1 0 
+[Received Client Permutation P_c]: 3 4 2 1 0 
+
+[Recovered G from G_s using P_s^-1]
+0 0 0 1 0 
+0 0 0 0 0 
+0 0 0 1 1 
+1 0 1 0 0 
+0 0 1 0 0 
+
+[Expected G_sc (for verification)]
+0 0 1 0 0 
+0 0 1 1 0 
+1 1 0 0 0 
+0 1 0 0 0 
+0 0 0 0 0 
+❌ Graphs are NOT isomorphic — communication aborted.
+[INFO] Server shutdown complete

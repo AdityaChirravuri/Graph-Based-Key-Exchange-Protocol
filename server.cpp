@@ -8,12 +8,12 @@
 #include <arpa/inet.h>
 #include <numeric>
 #include <random>
+#include <cstdio>  // for freopen()
 
-// Define constants
 const int PORT = 8080;
 const int GRAPH_SIZE = 5;
 
-// Function to create a random graph
+// Create a random undirected graph
 std::vector<std::vector<int>> createGraph() {
     std::vector<std::vector<int>> graph(GRAPH_SIZE, std::vector<int>(GRAPH_SIZE, 0));
     srand(time(0));
@@ -25,38 +25,36 @@ std::vector<std::vector<int>> createGraph() {
     return graph;
 }
 
-// Function to permute a graph with a given permutation vector
+// Apply permutation to graph
 std::vector<std::vector<int>> permuteGraph(const std::vector<std::vector<int>>& graph, const std::vector<int>& perm) {
-    std::vector<std::vector<int>> permutedGraph(GRAPH_SIZE, std::vector<int>(GRAPH_SIZE, 0));
-    for (int i = 0; i < GRAPH_SIZE; ++i) {
-        for (int j = 0; j < GRAPH_SIZE; ++j) {
-            permutedGraph[perm[i]][perm[j]] = graph[i][j];
-        }
-    }
-    return permutedGraph;
+    std::vector<std::vector<int>> permuted(GRAPH_SIZE, std::vector<int>(GRAPH_SIZE, 0));
+    for (int i = 0; i < GRAPH_SIZE; ++i)
+        for (int j = 0; j < GRAPH_SIZE; ++j)
+            permuted[perm[i]][perm[j]] = graph[i][j];
+    return permuted;
 }
 
-// Function to check if two graphs are isomorphic
-bool areIsomorphic(const std::vector<std::vector<int>>& graph1, const std::vector<std::vector<int>>& graph2) {
-    if (graph1.size() != graph2.size())
-        return false;
+// Print 2D matrix
+void printMatrix(const std::vector<std::vector<int>>& matrix, const std::string& name) {
+    std::cout << "\n[" << name << "]\n";
+    for (const auto& row : matrix) {
+        for (int val : row) std::cout << val << " ";
+        std::cout << "\n";
+    }
+}
 
-    int n = graph1.size();
-    std::vector<int> perm(n);
-    std::iota(perm.begin(), perm.end(), 0);
-
-    // Try all permutations of vertices
-    do {
-        std::vector<std::vector<int>> permutedGraph = permuteGraph(graph1, perm);
-        if (permutedGraph == graph2) {
-            return true; // Found an isomorphism
-        }
-    } while (std::next_permutation(perm.begin(), perm.end()));
-
-    return false; // No isomorphism found
+void printVector(const std::vector<int>& vec, const std::string& name) {
+    std::cout << "[" << name << "]: ";
+    for (int val : vec) std::cout << val << " ";
+    std::cout << "\n";
 }
 
 int main() {
+    // Logging
+    freopen("server_log.txt", "w", stdout);
+    freopen("server_err.txt", "w", stderr);
+    std::cout << "[SERVER] Logging started...\n";
+
     int server_fd, new_socket;
     struct sockaddr_in address;
     int opt = 1;
@@ -64,7 +62,7 @@ int main() {
 
     // Socket setup
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-        perror("Socket creation error");
+        perror("[ERROR] Socket creation failed");
         exit(EXIT_FAILURE);
     }
     setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt));
@@ -72,50 +70,91 @@ int main() {
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(PORT);
 
-    bind(server_fd, (struct sockaddr *)&address, sizeof(address));
-    listen(server_fd, 3);
-
-    // Wait for client connection
-    std::cout << "Waiting for client connection...\n";
-    if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
-        perror("Connection accept error");
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        perror("[ERROR] Bind failed");
         exit(EXIT_FAILURE);
     }
 
-    // Create a public graph and permute it
-    auto publicGraph = createGraph();
-    std::vector<int> perm(GRAPH_SIZE);
-    std::iota(perm.begin(), perm.end(), 0);
+    listen(server_fd, 3);
+    std::cout << "[INFO] Server listening on port " << PORT << "\n";
+    std::cout << "[INFO] Waiting for client connection...\n";
 
-    // Initialize random generator for shuffling
+    if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
+        perror("[ERROR] Accept failed");
+        exit(EXIT_FAILURE);
+    }
+    std::cout << "[INFO] Client connected\n";
+
+    // Step 1: Create graph G
+    auto originalGraph = createGraph();
+    printMatrix(originalGraph, "Original Graph G");
+
+    // Step 2: Generate P_s
+    std::vector<int> perm_s(GRAPH_SIZE);
+    std::iota(perm_s.begin(), perm_s.end(), 0);
     std::random_device rd;
     std::mt19937 g(rd());
-    std::shuffle(perm.begin(), perm.end(), g);
+    std::shuffle(perm_s.begin(), perm_s.end(), g);
+    printVector(perm_s, "Server Permutation P_s");
 
-    // Permute the graph
-    auto permutedGraph = permuteGraph(publicGraph, perm);
+    // Step 3: G_s = P_s(G)
+    auto serverGraph = permuteGraph(originalGraph, perm_s);
+    printMatrix(serverGraph, "Permuted Graph G_s");
 
-    // Send permuted graph to client
-    send(new_socket, permutedGraph.data(), GRAPH_SIZE * GRAPH_SIZE * sizeof(int), 0);
-    std::cout << "Sent permuted graph to client\n";
+    // Step 4: Send G_s
+    std::vector<int> flatGraph(GRAPH_SIZE * GRAPH_SIZE);
+    for (int i = 0; i < GRAPH_SIZE; ++i)
+        for (int j = 0; j < GRAPH_SIZE; ++j)
+            flatGraph[i * GRAPH_SIZE + j] = serverGraph[i][j];
 
-    // Receive permuted graph from client
-    std::vector<std::vector<int>> clientGraph(GRAPH_SIZE, std::vector<int>(GRAPH_SIZE, 0));
-    read(new_socket, clientGraph.data(), GRAPH_SIZE * GRAPH_SIZE * sizeof(int));
+    send(new_socket, flatGraph.data(), flatGraph.size() * sizeof(int), 0);
+    std::cout << "[INFO] Sent G_s to client\n";
 
-    // Check for isomorphism
-    if (areIsomorphic(permutedGraph, clientGraph)) {
-        std::cout << "The graphs are isomorphic.\n";
-        // Data transfer or other operations can happen here
-    } else {
-        std::cout << "The graphs are not isomorphic. Data transfer aborted.\n";
+    // Step 5: Receive G_sc
+    std::vector<int> flatClientGraph(GRAPH_SIZE * GRAPH_SIZE);
+    ssize_t bytesReceived = read(new_socket, flatClientGraph.data(), flatClientGraph.size() * sizeof(int));
+    if (bytesReceived != static_cast<ssize_t>(flatClientGraph.size() * sizeof(int))) {
+        std::cerr << "[ERROR] Incomplete G_sc received\n";
         close(new_socket);
-        close(server_fd);
-        return 0; // Exit if graphs are not isomorphic
+        return 1;
     }
 
-    // Close the connection
+    std::vector<std::vector<int>> clientGraph(GRAPH_SIZE, std::vector<int>(GRAPH_SIZE));
+    for (int i = 0; i < GRAPH_SIZE; ++i)
+        for (int j = 0; j < GRAPH_SIZE; ++j)
+            clientGraph[i][j] = flatClientGraph[i * GRAPH_SIZE + j];
+    printMatrix(clientGraph, "Received Graph G_sc from Client");
+
+    // Step 6: Receive P_c
+    std::vector<int> perm_c(GRAPH_SIZE);
+    ssize_t permBytes = read(new_socket, perm_c.data(), GRAPH_SIZE * sizeof(int));
+    if (permBytes != static_cast<ssize_t>(GRAPH_SIZE * sizeof(int))) {
+        std::cerr << "[ERROR] Failed to receive client permutation\n";
+        close(new_socket);
+        return 1;
+    }
+    printVector(perm_c, "Received Client Permutation P_c");
+
+    // Step 7: Recover original G by reversing P_s
+    std::vector<int> inv_perm_s(GRAPH_SIZE);
+    for (int i = 0; i < GRAPH_SIZE; ++i)
+        inv_perm_s[perm_s[i]] = i;
+    auto recoveredGraph = permuteGraph(serverGraph, inv_perm_s);
+    printMatrix(recoveredGraph, "Recovered G from G_s using P_s^-1");
+
+    // Step 8: Apply P_c to recovered G to get expected G_sc
+    auto expectedGraph = permuteGraph(recoveredGraph, perm_c);
+    printMatrix(expectedGraph, "Expected G_sc (for verification)");
+
+    // Step 9: Compare expectedGraph and clientGraph
+    if (expectedGraph == clientGraph) {
+        std::cout << "✅ Graphs are isomorphic — key exchange successful.\n";
+    } else {
+        std::cout << "❌ Graphs are NOT isomorphic — communication aborted.\n";
+    }
+
     close(new_socket);
     close(server_fd);
+    std::cout << "[INFO] Server shutdown complete\n";
     return 0;
 }

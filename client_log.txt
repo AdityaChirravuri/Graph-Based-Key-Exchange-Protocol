@@ -1,0 +1,24 @@
+[CLIENT] Logging started...
+[INFO] Socket created
+[INFO] Connected to server
+[INFO] Expecting 100 bytes
+[INFO] Graph received from server (100 bytes)
+
+[G_s from Server]
+0 1 0 0 1 
+1 0 1 0 0 
+0 1 0 0 0 
+0 0 0 0 0 
+1 0 0 0 0 
+
+[Client Permutation P_c]: 3 4 2 1 0 
+
+[G_sc (G_s after applying P_c)]
+0 0 0 1 0 
+0 0 0 0 0 
+0 0 0 0 1 
+1 0 0 0 1 
+0 0 1 1 0 
+[INFO] Sent 100 bytes (G_sc)
+[INFO] Sent 20 bytes (P_c)
+[CLIENT] Graph and permutation sent. Closing connection.
